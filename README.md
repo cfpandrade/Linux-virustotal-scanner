@@ -23,11 +23,11 @@ This script allows you to perform a scan on a file or a MD5 hash using the Virus
 
 4. Make the script executable:
 
-     chmod +x virustotal_scan.sh
+     chmod +x virustotal
 
 5. Move the script to the `/usr/bin` directory:
 
-     sudo mv virustotal_scan.sh /usr/bin/
+     sudo mv virustotal /usr/bin/
 
 ## Usage
 
