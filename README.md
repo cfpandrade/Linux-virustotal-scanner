@@ -33,11 +33,11 @@ This script allows you to perform a scan on a file or a MD5 hash using the Virus
 
   To scan a file, run:
 
-     virustotal_scan.sh /path/to/file
+     virustotal /path/to/file
 
   To scan a MD5 hash, run:
 
-     virustotal_scan.sh <MD5 hash>
+     virustotal <MD5 hash>
 
 ## License
 
