@@ -1,0 +1,60 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+  echo "You must provide the path to the file to be scanned or the MD5 hash as an argument."
+  exit 1
+fi
+
+API_KEY="VIRUSTOTAL_API_KEY"
+
+if [[ "$1" == *"/"* ]]; then
+  FILE="$1"
+else
+  HASH="$1"
+fi
+
+if [ -n "$FILE" ]; then
+  RESPONSE=$(curl -s -X POST -H "x-apikey: $API_KEY" -F "file=@$FILE" https://www.virustotal.com/api/v3/files)
+elif [ -n "$HASH" ]; then
+  RESPONSE=$(curl -s -H "x-apikey: $API_KEY" https://www.virustotal.com/api/v3/files/$HASH)
+else
+  echo "You must provide the path to the file to be scanned or the MD5 hash as an argument."
+  exit 1
+fi
+
+if [ -n "$FILE" ]; then
+  ID=$(echo "$RESPONSE" | jq -r '.data.id')
+else
+  ID="$HASH"
+fi
+
+malicious=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.malicious')
+type_unsupported=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats."type-unsupported"')
+undetected=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.undetected')
+harmless=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.harmless')
+suspicious=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.suspicious')
+confirmed_timeout=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats."confirmed-timeout"')
+timeout=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.timeout')
+failure=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.failure')
+
+if [ "$malicious" != "null" ]; then
+  color=$(tput setaf 1) # red for malware detected
+  printf "\nVirusTotal scan result for the file or MD5 hash: $ID\n\n"
+  printf "|--------------------|--------------|\n"
+  printf "| %-18s | %-12s |\n" "Status" "Count"
+  printf "|--------------------|--------------|\n"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Malware detected" "$malicious"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Type not supported" "$type_unsupported"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Suspicious" "$suspicious"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Confirmed timeout" "$confirmed_timeout"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Timeout" "$timeout"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Error" "$failure"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Harmless" "$harmless"
+  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Not detected" "$undetected"
+  printf "|--------------------|--------------|\n"
+else
+  color=$(tput setaf 2) # green for a clean file
+  printf "\n%s\n" "****************************"
+  printf "%s%s%s\n" "$(tput setaf 2)" "* The File | Hash is clean *" "$(tput sgr0)"
+  printf "%s\n" "****************************"
+fi
