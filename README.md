@@ -13,11 +13,11 @@ This script allows you to perform a scan on a file or a MD5 hash using the Virus
 
 1. Clone the repository to your local machine:
 
-git clone https://github.com/cfpandrade/virus-total-scan.git
+     git clone https://github.com/cfpandrade/virus-total-scan.git
 
 2. Navigate to the project directory:
 
-cd virus-total-scan
+    cd virus-total-scan
 
 markdown
 Copy code
