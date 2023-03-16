@@ -17,42 +17,27 @@ This script allows you to perform a scan on a file or a MD5 hash using the Virus
 
 2. Navigate to the project directory:
 
-    cd virus-total-scan
-
-markdown
-Copy code
+     cd virus-total-scan
 
 3. Edit the script and replace the `VIRUSTOTAL_API_KEY` variable with your VirusTotal API key.
 
 4. Make the script executable:
 
-chmod +x virustotal_scan.sh
-
-markdown
-Copy code
+     chmod +x virustotal_scan.sh
 
 5. Move the script to the `/usr/bin` directory:
 
-sudo mv virustotal_scan.sh /usr/bin/
-
-css
-Copy code
+     sudo mv virustotal_scan.sh /usr/bin/
 
 ## Usage
 
-To scan a file, run:
+  To scan a file, run:
 
-virustotal_scan.sh /path/to/file
+     virustotal_scan.sh /path/to/file
 
-css
-Copy code
+  To scan a MD5 hash, run:
 
-To scan a MD5 hash, run:
-
-virustotal_scan.sh <MD5 hash>
-
-vbnet
-Copy code
+     virustotal_scan.sh <MD5 hash>
 
 ## License
 
