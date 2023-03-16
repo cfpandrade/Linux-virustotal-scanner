@@ -1,39 +1,64 @@
-# Project Title
+# VirusTotal Scan Script
 
-[Project description]
+This script allows you to perform a scan on a file or a MD5 hash using the VirusTotal API. It returns the scan results showing if the file or hash is malicious or not.
 
-## Getting Started
+## Requirements
 
-[Instructions to get started with the project, including any prerequisites and installation instructions]
+- Bash
+- curl
+- jq
+- A VirusTotal API key
 
-### Prerequisites
+## Installation
 
-[List of prerequisites, including software and hardware requirements]
+1. Clone the repository to your local machine:
 
-### Installing
+git clone https://github.com/<your_username>/virus-total-scan.git
 
-[Installation instructions for the project]
+css
+Copy code
+
+2. Navigate to the project directory:
+
+cd virus-total-scan
+
+markdown
+Copy code
+
+3. Edit the script and replace the `VIRUSTOTAL_API_KEY` variable with your VirusTotal API key.
+
+4. Make the script executable:
+
+chmod +x virustotal_scan.sh
+
+markdown
+Copy code
+
+5. Move the script to the `/usr/bin` directory:
+
+sudo mv virustotal_scan.sh /usr/bin/
+
+css
+Copy code
 
 ## Usage
 
-[Instructions for using the project, including how to run it and any command-line arguments or options]
+To scan a file, run:
 
-## Contributing
+virustotal_scan.sh /path/to/file
 
-[Guidelines for contributing to the project, including how to submit bug reports, feature requests, and pull requests]
+css
+Copy code
 
-## Versioning
+To scan a MD5 hash, run:
 
-[Explanation of versioning system used for the project]
+virustotal_scan.sh <MD5 hash>
 
-## Authors
-
-[List of authors and contributors to the project]
+vbnet
+Copy code
 
 ## License
 
-[Information on the project's license]
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgements
 
-[Thank-yous and acknowledgements for people or organizations that contributed to the project]
