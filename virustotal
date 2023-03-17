@@ -18,7 +18,7 @@ if [ -n "$FILE" ]; then
 elif [ -n "$HASH" ]; then
   RESPONSE=$(curl -s -H "x-apikey: $API_KEY" https://www.virustotal.com/api/v3/files/$HASH)
 else
-  echo "You must provide the path to the file to be scanned or the MD5 hash as an argument."
+  echo "You must provide the path to the file to be scanned or the hash as an argument."
   exit 1
 fi
 
