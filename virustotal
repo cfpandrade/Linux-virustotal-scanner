@@ -1,15 +1,18 @@
 #!/bin/bash
+# Author: Carlos Andrade
+# Description: Script to scan files or hashes with VirusTotal and display the results in a user-friendly, centered format.
 
 if [ -z "$1" ]; then
   echo "Provide a file path or hash."
   exit 1
 fi
 
-API_KEY="VIRUSTOTAL_API_KEY"
+API_KEY="API_KEY"
 FILE=""
 HASH=""
+TMPFILE=$(mktemp)
 
-if [[ "$1" == */* ]]; then
+if [ -f "$1" ]; then
   FILE="$1"
 else
   HASH="$1"
@@ -19,14 +22,13 @@ spinner() {
   local pid=$1
   local delay=0.1
   local spinstr='|/-\'
-  while ps -p $pid > /dev/null 2>&1; do
+  while kill -0 $pid 2>/dev/null; do
     local temp=${spinstr#?}
-    printf " [%c]  " "$spinstr"
+    printf "\rProcessing... [%c] " "$spinstr"
     spinstr=$temp${spinstr%"$temp"}
     sleep $delay
-    printf "\b\b\b\b\b\b"
   done
-  printf "    \b\b\b\b"
+  printf "\rProcessing... [Done]    \n"
 }
 
 animate_print() {
@@ -38,79 +40,121 @@ animate_print() {
   echo
 }
 
+center_text_block() {
+  # Center all lines in a block relative to the longest line
+  local lines=("$@")
+  local term_width=$(tput cols)
+  local max_width=0
+
+  # Find the maximum line length
+  for line in "${lines[@]}"; do
+    local line_width=${#line}
+    if (( line_width > max_width )); then
+      max_width=$line_width
+    fi
+  done
+
+  # Center each line based on the longest line
+  for line in "${lines[@]}"; do
+    local line_width=${#line}
+    local spaces=$(( (term_width - max_width) / 2 ))
+    printf "%*s%s\n" "$spaces" "" "$line"
+  done
+}
+
 fetch_response() {
   if [ -n "$FILE" ]; then
-    curl -s -X POST -H "x-apikey: $API_KEY" -F "file=@$FILE" "https://www.virustotal.com/api/v3/files"
+    curl -s -f -X POST -H "x-apikey: $API_KEY" -F "file=@$FILE" "https://www.virustotal.com/api/v3/files"
   else
-    curl -s -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/files/$HASH"
+    curl -s -f -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/files/$HASH"
   fi
 }
 
 poll_analysis() {
   local analysis_id="$1"
   while true; do
-    local response=$(curl -s -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/analyses/$analysis_id")
-    local status=$(echo "$response" | jq -r '.data.attributes.status')
+    response=$(curl -s -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/analyses/$analysis_id")
+    status=$(echo "$response" | jq -r '.data.attributes.status')
     if [ "$status" == "completed" ]; then
       echo "$response"
       return
     fi
+    printf "\rWaiting for analysis to complete... "
     sleep 2
   done
 }
 
-# Start processing
-animate_print "Processing..."
-
-tmpfile=$(mktemp)
-fetch_response > "$tmpfile" &
+clear
+animate_print "Starting VirusTotal Scan..."
+fetch_response > "$TMPFILE" &
 fetch_pid=$!
 spinner $fetch_pid
 wait $fetch_pid
 
-RESPONSE=$(cat "$tmpfile")
-rm "$tmpfile"
+RESPONSE=$(cat "$TMPFILE")
+rm "$TMPFILE"
 
-analysis_id=$(echo "$RESPONSE" | jq -r '.data.id')
-if [ -z "$analysis_id" ] || [ "$analysis_id" == "null" ]; then
+# Extract analysis_id
+analysis_id=$(echo "$RESPONSE" | jq -r '.data.id // empty')
+
+# Check if analysis_id is missing
+if [ -z "$analysis_id" ]; then
+  dtype=$(echo "$RESPONSE" | jq -r '.data.type // empty')
+  if [ "$dtype" = "file" ]; then
+    known_hash=$(echo "$RESPONSE" | jq -r '.data.id // empty')
+    if [ -n "$known_hash" ]; then
+      analysis_id=$(curl -s -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/files/$known_hash" | jq -r '.data.last_analysis_id // empty')
+    fi
+  fi
+fi
+
+if [ -z "$analysis_id" ]; then
   echo "Error: Failed to retrieve analysis ID."
   exit 1
 fi
 
 ANALYSIS_RESPONSE=$(poll_analysis "$analysis_id")
 
-# Parse analysis results
-malicious=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.malicious')
-unsupported=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats["type-unsupported"]')
-undetected=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.undetected')
-harmless=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.harmless')
-suspicious=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.suspicious')
-confirmed_timeout=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats["confirmed-timeout"]')
-timeout=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.timeout')
-failure=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.failure')
+# Extract metrics
+malicious=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.malicious // 0')
+unsupported=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats["type-unsupported"] // 0')
+undetected=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.undetected // 0')
+harmless=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.harmless // 0')
+suspicious=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.suspicious // 0')
+confirmed_timeout=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats["confirmed-timeout"] // 0')
+timeout=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.timeout // 0')
+failure=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.failure // 0')
 
-# Display results
-if [ "$malicious" != "null" ] && [ "$malicious" -gt 0 ]; then
+clear
+if [ "$malicious" -gt 0 ]; then
   c=$(tput setaf 1)
   nc=$(tput sgr0)
-  animate_print "VirusTotal Scan Results:"
+  echo -e "\a"
+  center_text_block \
+    "${c}           ***************************************${nc}" \
+    "${c}           *** ALERT: Malicious file detected! ***${nc}" \
+    "${c}           ***************************************${nc}"
   echo
-  echo "|--------------------|--------------|"
-  printf "| %-18s | %-12s |\n" "Status" "Count"
-  echo "|--------------------|--------------|"
-  printf "| $c%-18s$nc | %-12s |\n" "Malicious" "$malicious"
-  printf "| $c%-18s$nc | %-12s |\n" "Unsupported" "$unsupported"
-  printf "| $c%-18s$nc | %-12s |\n" "Suspicious" "$suspicious"
-  printf "| $c%-18s$nc | %-12s |\n" "Confirmed Timeout" "$confirmed_timeout"
-  printf "| $c%-18s$nc | %-12s |\n" "Timeout" "$timeout"
-  printf "| $c%-18s$nc | %-12s |\n" "Error" "$failure"
-  printf "| $c%-18s$nc | %-12s |\n" "Harmless" "$harmless"
-  printf "| $c%-18s$nc | %-12s |\n" "Undetected" "$undetected"
-  echo "|--------------------|--------------|"
+  center_text_block \
+    "|--------------------|--------------|" \
+    "| Status             | Count        |" \
+    "|--------------------|--------------|" \
+    "$(printf "| %-18s | %-12s |" "Malicious" "$malicious")" \
+    "$(printf "| %-18s | %-12s |" "Unsupported" "$unsupported")" \
+    "$(printf "| %-18s | %-12s |" "Suspicious" "$suspicious")" \
+    "$(printf "| %-18s | %-12s |" "Confirmed Timeout" "$confirmed_timeout")" \
+    "$(printf "| %-18s | %-12s |" "Timeout" "$timeout")" \
+    "$(printf "| %-18s | %-12s |" "Error" "$failure")" \
+    "$(printf "| %-18s | %-12s |" "Harmless" "$harmless")" \
+    "$(printf "| %-18s | %-12s |" "Undetected" "$undetected")" \
+    "|--------------------|--------------|" \
+    "${c}Script by: Carlos Andrade${nc}"
 else
   c=$(tput setaf 2)
   nc=$(tput sgr0)
-  animate_print "****************************"
-  animate_print "${c}* The file or hash is clean *${nc}"
-  animate_print "****************************"
+  center_text_block \
+    "*****************************" \
+    "${c}* The file or hash is clean *${nc}" \
+    "*****************************" \
+    "${c}Script by: Carlos Andrade${nc}"    
 fi
