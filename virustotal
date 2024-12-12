@@ -1,60 +1,116 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-  echo "You must provide the path to the file to be scanned or the hash as an argument."
+  echo "Provide a file path or hash."
   exit 1
 fi
 
 API_KEY="VIRUSTOTAL_API_KEY"
+FILE=""
+HASH=""
 
-if [[ "$1" == *"/"* ]]; then
+if [[ "$1" == */* ]]; then
   FILE="$1"
 else
   HASH="$1"
 fi
 
-if [ -n "$FILE" ]; then
-  RESPONSE=$(curl -s -X POST -H "x-apikey: $API_KEY" -F "file=@$FILE" https://www.virustotal.com/api/v3/files)
-elif [ -n "$HASH" ]; then
-  RESPONSE=$(curl -s -H "x-apikey: $API_KEY" https://www.virustotal.com/api/v3/files/$HASH)
-else
-  echo "You must provide the path to the file to be scanned or the hash as an argument."
+spinner() {
+  local pid=$1
+  local delay=0.1
+  local spinstr='|/-\'
+  while ps -p $pid > /dev/null 2>&1; do
+    local temp=${spinstr#?}
+    printf " [%c]  " "$spinstr"
+    spinstr=$temp${spinstr%"$temp"}
+    sleep $delay
+    printf "\b\b\b\b\b\b"
+  done
+  printf "    \b\b\b\b"
+}
+
+animate_print() {
+  local text="$1"
+  for ((i = 0; i < ${#text}; i++)); do
+    echo -n "${text:$i:1}"
+    sleep 0.05
+  done
+  echo
+}
+
+fetch_response() {
+  if [ -n "$FILE" ]; then
+    curl -s -X POST -H "x-apikey: $API_KEY" -F "file=@$FILE" "https://www.virustotal.com/api/v3/files"
+  else
+    curl -s -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/files/$HASH"
+  fi
+}
+
+poll_analysis() {
+  local analysis_id="$1"
+  while true; do
+    local response=$(curl -s -H "x-apikey: $API_KEY" "https://www.virustotal.com/api/v3/analyses/$analysis_id")
+    local status=$(echo "$response" | jq -r '.data.attributes.status')
+    if [ "$status" == "completed" ]; then
+      echo "$response"
+      return
+    fi
+    sleep 2
+  done
+}
+
+# Start processing
+animate_print "Processing..."
+
+tmpfile=$(mktemp)
+fetch_response > "$tmpfile" &
+fetch_pid=$!
+spinner $fetch_pid
+wait $fetch_pid
+
+RESPONSE=$(cat "$tmpfile")
+rm "$tmpfile"
+
+analysis_id=$(echo "$RESPONSE" | jq -r '.data.id')
+if [ -z "$analysis_id" ] || [ "$analysis_id" == "null" ]; then
+  echo "Error: Failed to retrieve analysis ID."
   exit 1
 fi
 
-if [ -n "$FILE" ]; then
-  ID=$(echo "$RESPONSE" | jq -r '.data.id')
-else
-  ID="$HASH"
-fi
+ANALYSIS_RESPONSE=$(poll_analysis "$analysis_id")
 
-malicious=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.malicious')
-type_unsupported=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats."type-unsupported"')
-undetected=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.undetected')
-harmless=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.harmless')
-suspicious=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.suspicious')
-confirmed_timeout=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats."confirmed-timeout"')
-timeout=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.timeout')
-failure=$(echo "$RESPONSE" | jq -r '.data.attributes.last_analysis_stats.failure')
+# Parse analysis results
+malicious=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.malicious')
+unsupported=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats["type-unsupported"]')
+undetected=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.undetected')
+harmless=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.harmless')
+suspicious=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.suspicious')
+confirmed_timeout=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats["confirmed-timeout"]')
+timeout=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.timeout')
+failure=$(echo "$ANALYSIS_RESPONSE" | jq -r '.data.attributes.stats.failure')
 
-if [ "$malicious" != "null" ]; then
-  color=$(tput setaf 1) # red for malware detected
-  printf "\nVirusTotal scan result for the file or hash: $ID\n\n"
-  printf "|--------------------|--------------|\n"
+# Display results
+if [ "$malicious" != "null" ] && [ "$malicious" -gt 0 ]; then
+  c=$(tput setaf 1)
+  nc=$(tput sgr0)
+  animate_print "VirusTotal Scan Results:"
+  echo
+  echo "|--------------------|--------------|"
   printf "| %-18s | %-12s |\n" "Status" "Count"
-  printf "|--------------------|--------------|\n"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Malware detected" "$malicious"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Type not supported" "$type_unsupported"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Suspicious" "$suspicious"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Confirmed timeout" "$confirmed_timeout"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Timeout" "$timeout"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Error" "$failure"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Harmless" "$harmless"
-  printf "| $color%-18s$(tput sgr0) | %-12s |\n" "Not detected" "$undetected"
-  printf "|--------------------|--------------|\n"
+  echo "|--------------------|--------------|"
+  printf "| $c%-18s$nc | %-12s |\n" "Malicious" "$malicious"
+  printf "| $c%-18s$nc | %-12s |\n" "Unsupported" "$unsupported"
+  printf "| $c%-18s$nc | %-12s |\n" "Suspicious" "$suspicious"
+  printf "| $c%-18s$nc | %-12s |\n" "Confirmed Timeout" "$confirmed_timeout"
+  printf "| $c%-18s$nc | %-12s |\n" "Timeout" "$timeout"
+  printf "| $c%-18s$nc | %-12s |\n" "Error" "$failure"
+  printf "| $c%-18s$nc | %-12s |\n" "Harmless" "$harmless"
+  printf "| $c%-18s$nc | %-12s |\n" "Undetected" "$undetected"
+  echo "|--------------------|--------------|"
 else
-  color=$(tput setaf 2) # green for a clean file
-  printf "\n%s\n" "****************************"
-  printf "%s%s%s\n" "$(tput setaf 2)" "* The File | Hash is clean *" "$(tput sgr0)"
-  printf "%s\n" "****************************"
+  c=$(tput setaf 2)
+  nc=$(tput sgr0)
+  animate_print "****************************"
+  animate_print "${c}* The file or hash is clean *${nc}"
+  animate_print "****************************"
 fi
